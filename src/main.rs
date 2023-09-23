@@ -1,38 +1,47 @@
 use axum::extract::{Json, Path, State};
 use axum::{http::StatusCode, response::IntoResponse, routing::get, Router};
+use repository::PostgresRepository;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use time::Date;
 
-#[derive(Clone, Serialize)]
-struct Person {
+mod repository;
+
+time::serde::format_description!(date_ftm, Date, "[year]-[month]-[day]");
+
+#[derive(Clone, Serialize, sqlx::FromRow)]
+pub struct Person {
     id: i32,
     name: String,
     nick: String,
+    #[serde(with = "date_ftm")]
+    birth_date: Date,
     stack: Option<Vec<String>>,
 }
 
 #[derive(Clone, Deserialize)]
-struct NewPerson {
-    id: i32,
+pub struct NewPerson {
     name: String,
     nick: String,
+    #[serde(with = "date_ftm")]
+    birth_date: Date,
     stack: Option<Vec<String>>,
 }
 
-type AppState = Arc<Mutex<HashMap<i32, Person>>>;
+type AppState = Arc<PostgresRepository>;
 
-async fn search_people(state: State<AppState>) -> impl IntoResponse {
-    let State(people) = state;
-    (StatusCode::OK, "Busca pessoas")
+async fn search_people(State(people): State<AppState>, search: String) -> impl IntoResponse {
+    match people.search_people(search).await {
+        Ok(people) => Ok(Json(people)),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
 }
 
 async fn find_person(State(people): State<AppState>, Path(id): Path<i32>) -> impl IntoResponse {
-    let my_people = people.lock().await;
-    match my_people.get(&id) {
-        Some(person) => Ok(Json(person.clone())),
-        None => Err(StatusCode::NOT_FOUND),
+    match people.find_person(id).await {
+        Ok(Some(person)) => Ok(Json(person)),
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
     }
 }
 
@@ -40,40 +49,35 @@ async fn create_person(
     State(people): State<AppState>,
     Json(new_person): Json<NewPerson>,
 ) -> impl IntoResponse {
-    let id = new_person.id;
-    let person = Person {
-        id,
-        name: new_person.name,
-        nick: new_person.nick,
-        stack: new_person.stack,
-    };
-    people.lock().await.insert(id, person.clone());
-    (StatusCode::CREATED, Json(person))
+    match people.create_person(new_person).await {
+        Ok(person) => Ok((StatusCode::CREATED, Json(person))),
+        Err(e) => {
+            println!("{}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }
 
-async fn count_people() -> impl IntoResponse {
-    (StatusCode::OK, "Conta pessoas")
+async fn count_people(State(people): State<AppState>) -> impl IntoResponse {
+    match people.count_people().await {
+        Ok(count) => Ok(Json(count)),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
 }
 
 #[tokio::main]
 async fn main() {
-    let mut people: HashMap<i32, Person> = HashMap::new();
+    let repo =
+        PostgresRepository::connect("postgres://postgres:root@localhost:5432/postgres".to_string())
+            .await;
 
-    let person = Person {
-        id: 1,
-        name: "João".to_string(),
-        nick: "kakashi".to_string(),
-        stack: None,
-    };
-    people.insert(1, person);
-
-    let app_state = Arc::new(Mutex::new(people));
+    let repo_arch = Arc::new(repo);
 
     let app = Router::new()
         .route("/pessoas", get(search_people).post(create_person))
         .route("/pessoas/:id", get(find_person))
         .route("/conta-pessoas", get(count_people))
-        .with_state(app_state);
+        .with_state(repo_arch);
 
     axum::Server::bind(&"0.0.0.0:8000".parse().unwrap())
         .serve(app.into_make_service())
