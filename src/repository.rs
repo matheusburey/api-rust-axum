@@ -1,6 +1,6 @@
 use sqlx::{postgres::PgPoolOptions, PgPool};
 
-use crate::{NewPerson, Person};
+use crate::model::{NewPerson, Person};
 
 pub struct PostgresRepository {
     pool: PgPool,
@@ -24,13 +24,8 @@ impl PostgresRepository {
             .await
     }
 
-    pub async fn get_all_persons(&self) -> Vec<Person> {
-        todo!()
-    }
-
-    pub async fn search_people(&self, query: String) -> Result<Vec<Person>, sqlx::Error> {
-        sqlx::query_as("SELECT * FROM people WHERE to_tsquery('people' $1) @@ search")
-            .bind(query)
+    pub async fn get_all_persons(&self) -> Result<Vec<Person>, sqlx::Error> {
+        sqlx::query_as("SELECT * FROM people")
             .fetch_all(&self.pool)
             .await
     }
@@ -45,16 +40,22 @@ impl PostgresRepository {
         .await
     }
 
-    pub async fn update_person(&self, _person: Person) -> Option<Person> {
-        todo!()
+    pub async fn update_person(&self, id: i32, person: NewPerson) -> Result<Person, sqlx::Error> {
+        sqlx::query_as(
+            "UPDATE people SET name = $1, birth_date = $2, stack = $3 WHERE id = $4 RETURNING *",
+        )
+        .bind(person.name)
+        .bind(person.birth_date)
+        .bind(person.stack)
+        .bind(id)
+        .fetch_one(&self.pool)
+        .await
     }
 
-    pub async fn count_people(&self) -> Result<i32, sqlx::Error> {
-        // sqlx::query("SELECT COUNT(id) FROM people").fetch_one(&self.pool).await;
-        Ok(10)
-    }
-
-    pub async fn delete_person(&self, _id: i32) -> bool {
-        todo!()
+    pub async fn delete_person(&self, id: i32) -> Result<Person, sqlx::Error> {
+        sqlx::query_as("DELETE FROM people WHERE id = $1 RETURNING *")
+            .bind(id)
+            .fetch_one(&self.pool)
+            .await
     }
 }

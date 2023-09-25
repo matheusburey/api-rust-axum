@@ -1,82 +1,27 @@
-use axum::extract::{Json, Path, State};
-use axum::{http::StatusCode, response::IntoResponse, routing::get, Router};
-use repository::PostgresRepository;
-use serde::{Deserialize, Serialize};
-use std::sync::Arc;
-use time::Date;
-
+mod controlles;
+mod model;
 mod repository;
 
-time::serde::format_description!(date_ftm, Date, "[year]-[month]-[day]");
+use axum::{routing::get, Router};
+use controlles::{create_person, delete_person, find_person, get_all_persons, update_person};
+use dotenv::dotenv;
+use repository::PostgresRepository;
 
-#[derive(Clone, Serialize, sqlx::FromRow)]
-pub struct Person {
-    id: i32,
-    name: String,
-    nick: String,
-    #[serde(with = "date_ftm")]
-    birth_date: Date,
-    stack: Option<Vec<String>>,
-}
-
-#[derive(Clone, Deserialize)]
-pub struct NewPerson {
-    name: String,
-    nick: String,
-    #[serde(with = "date_ftm")]
-    birth_date: Date,
-    stack: Option<Vec<String>>,
-}
-
-type AppState = Arc<PostgresRepository>;
-
-async fn search_people(State(people): State<AppState>, search: String) -> impl IntoResponse {
-    match people.search_people(search).await {
-        Ok(people) => Ok(Json(people)),
-        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
-    }
-}
-
-async fn find_person(State(people): State<AppState>, Path(id): Path<i32>) -> impl IntoResponse {
-    match people.find_person(id).await {
-        Ok(Some(person)) => Ok(Json(person)),
-        Ok(None) => Err(StatusCode::NOT_FOUND),
-        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
-    }
-}
-
-async fn create_person(
-    State(people): State<AppState>,
-    Json(new_person): Json<NewPerson>,
-) -> impl IntoResponse {
-    match people.create_person(new_person).await {
-        Ok(person) => Ok((StatusCode::CREATED, Json(person))),
-        Err(e) => {
-            println!("{}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
-    }
-}
-
-async fn count_people(State(people): State<AppState>) -> impl IntoResponse {
-    match people.count_people().await {
-        Ok(count) => Ok(Json(count)),
-        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
-    }
-}
+use std::{env, sync::Arc};
 
 #[tokio::main]
 async fn main() {
-    let repo =
-        PostgresRepository::connect("postgres://postgres:root@localhost:5432/postgres".to_string())
-            .await;
+    dotenv().ok();
+    let repo = PostgresRepository::connect(env::var("DB_URL").expect("DB_URL")).await;
 
     let repo_arch = Arc::new(repo);
 
     let app = Router::new()
-        .route("/pessoas", get(search_people).post(create_person))
-        .route("/pessoas/:id", get(find_person))
-        .route("/conta-pessoas", get(count_people))
+        .route("/pessoas", get(get_all_persons).post(create_person))
+        .route(
+            "/pessoas/:id",
+            get(find_person).patch(update_person).delete(delete_person),
+        )
         .with_state(repo_arch);
 
     axum::Server::bind(&"0.0.0.0:8000".parse().unwrap())
