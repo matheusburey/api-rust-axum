@@ -2,11 +2,11 @@ mod controlles;
 mod model;
 mod repository;
 
-use axum::{routing::get, Router};
-use controlles::{create_person, delete_person, find_person, get_all_persons, update_person};
-use dotenv::dotenv;
+use controlles::*;
 use repository::PostgresRepository;
 
+use axum::{routing::get, Router};
+use dotenv::dotenv;
 use std::{env, sync::Arc};
 
 #[tokio::main]

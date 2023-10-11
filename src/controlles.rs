@@ -1,5 +1,6 @@
 use crate::model::NewPerson;
 use crate::repository::PostgresRepository;
+
 use axum::extract::{Json, Path, State};
 use axum::{http::StatusCode, response::IntoResponse};
 use std::sync::Arc;
@@ -22,10 +23,10 @@ pub async fn find_person(State(people): State<AppState>, Path(id): Path<i32>) ->
 }
 
 pub async fn create_person(
-    State(people): State<AppState>,
+    State(db): State<AppState>,
     Json(new_person): Json<NewPerson>,
 ) -> impl IntoResponse {
-    match people.create_person(new_person).await {
+    match db.create_person(new_person).await {
         Ok(person) => Ok((StatusCode::CREATED, Json(person))),
         Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
     }
@@ -38,10 +39,7 @@ pub async fn update_person(
 ) -> impl IntoResponse {
     match people.update_person(id, new_person).await {
         Ok(person) => Ok(Json(person)),
-        Err(e) => {
-            println!("{}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
     }
 }
 
