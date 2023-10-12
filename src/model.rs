@@ -21,3 +21,12 @@ pub struct NewPerson {
     pub birth_date: Date,
     pub stack: Option<Vec<String>>,
 }
+
+#[derive(Clone, Serialize)]
+pub struct NewPersonTest {
+    pub name: String,
+    pub nick: String,
+    #[serde(with = "date_ftm")]
+    pub birth_date: Date,
+    pub stack: Option<Vec<String>>,
+}
